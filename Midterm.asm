@@ -27,8 +27,10 @@
 .def	PWsetL = R10
 
 .equ	DEFAULT_PW = $05DC // The default setting for the pulse width
+//.equ	DEFAULT_PW = $0001
 
 .equ	FREQUENCY = $4E20 // The top of the timer at no clock divide (50hz)
+//.equ	FREQUENCY = $0005
 
 .def	TEMP = R16 // Middleman register
 .def	DBcount = R17 // Holds the loop count for debouncing
@@ -38,13 +40,16 @@
 						// you push to the stack, since this
 						// register is already used)
 
-.equ 	LOOP_COUNT = $01 // Determines how many cyles are used
+.equ 	LOOP_COUNT = $32 // Determines how many cyles are used
 						 // for debouncing
 
-.equ	INCREMENT_SIZE = $0001 // The size by which the pwm signal is
+.equ	INCREMENT_SIZE = $0005 // The size by which the pwm signal is
 							 // modified
-.equ	MAX_SIZE = $07D0
-.equ	MIN_SIZE = $03E8
+//.equ	MAX_SIZE = $07D0
+//.equ	MIN_SIZE = $03E8
+
+.equ	MAX_SIZE = 2300
+.equ	MIN_SIZE = 400
 
 .org	$0000
 		rjmp RESET
@@ -116,7 +121,7 @@ RESET:
 	out		OCR1BH, PWsetH
 	out		OCR1BL, PWsetL
 
-	// Configure timer1's many registers! (We will use OCR1B to output the singal)
+	// Configure timer1's many registers! (We will use OCR1B to output the signal)
 	// First comes TCCR1A
 	ldi		TEMP, (1 << COM1B1) | (0 << COM1B0) | (1 << WGM11) | (1 << WGM10)
 	out		TCCR1A, TEMP
@@ -124,6 +129,10 @@ RESET:
 	// Next comes TCCR1B (The clock doesn't need to be divided)
 	ldi		TEMP, (1 << WGM13) | (1 << WGM12) | (0 << CS12) | (0 << CS11) | (1 << CS10)
 	out		TCCR1B, TEMP
+
+	// Enable pullup on INT0 and INT1
+	ldi		TEMP, (1 << PD3) | (1 << PD2)
+	out		PORTD, TEMP
 
 	// Enable the interrupts
 	sei
@@ -143,7 +152,7 @@ INT0_FIRED:
 	// Debounce!
 	rcall DEBOUNCE
 
-	// Get whatever is currently on port D
+	// Get whatever is currently on port DPIND 3 16
 	in		PINDinput, PIND
 	// Load the current status of PD3 into the T bit
 	bst		PINDinput, PD3
@@ -165,16 +174,16 @@ INT0_FIRED:
 	brne	INT0_COUNTER_CLOCKWISE
 
 	// If they are equal, then it's clockwise
-	rcall CLOCKWISE
+	rcall COUNTER_CLOCKWISE
 
 	// Make sure we don't run over the counter clockwise function
 	rjmp INT0_FINISHED
 	
-	INT0_COUNTER_CLOCKWISE:
+INT0_COUNTER_CLOCKWISE:
 		
-		rcall COUNTER_CLOCKWISE
+		rcall CLOCKWISE
 
-	INT0_FINISHED:
+INT0_FINISHED:
 
 	pop PINDinput
 	pop TEMP
@@ -212,14 +221,14 @@ INT1_FIRED:
 	brne	INT1_CLOCKWISE
 
 	// If they are equal, then it's counter clockwise
-	rcall 	COUNTER_CLOCKWISE
+	rcall 	CLOCKWISE
 
 	// Make sure we don't run over the clockwise function
 	rjmp 	INT1_FINISHED
 	
 	INT1_CLOCKWISE:
 		
-		rcall 	CLOCKWISE
+		rcall 	COUNTER_CLOCKWISE
 
 	INT1_FINISHED:
 
@@ -339,10 +348,10 @@ DEBOUNCE:
 		// If the operation still isn't zero, loop again
 		brne 	DBloop
 
+		
+
 	pop 	TEMP
 	pop 	DBcompare
 	pop		DBcount
 
 	ret
-		
-		
