@@ -40,6 +40,10 @@
 						// you push to the stack, since this
 						// register is already used)
 
+.def	PCIcomp = R17 // Used for comparing to another register
+					  // to determine what register fired the
+					  // interrupt
+
 .equ 	LOOP_COUNT = $32 // Determines how many cyles are used
 						 // for debouncing
 
@@ -62,6 +66,10 @@
 .org	INT1addr
 		rjmp INT1_FIRED
 
+// Configure the function for the pin change interrupt
+.org	PCIaddr
+		rjmp PIN_CHANGE
+
 // Make sure we keep the program out of the interrupt vector space!
 .org	INT_VECTORS_SIZE
 
@@ -75,10 +83,6 @@ RESET:
 	// for any logical change
 	ldi 	TEMP, (0 << ISC11) | (1 << ISC10) | (0 << ISC01) | (1 << ISC00)
 	out		MCUCR, TEMP
-
-	// Enable both interrupts in the GIMSk
-	ldi		TEMP, (1 << INT1) | (1 << INT0)
-	out		GIMSK, TEMP
 
 	// Load up the constants
 	ldi		TEMP, high(MAX_SIZE)
@@ -133,6 +137,14 @@ RESET:
 	// Enable pullup on INT0 and INT1
 	ldi		TEMP, (1 << PD3) | (1 << PD2)
 	out		PORTD, TEMP
+
+	// Configure the pin change interrupt
+	ldi		TEMP, (1 << PCINT2) | (1 << PCINT7)
+	out		PCMSK, TEMP
+
+	// Enable both interrupts and the pin change interrupt in the GIMSK
+	ldi		TEMP, (1 << INT1) | (1 << INT0) | (1 << PCIE)
+	out		GIMSK, TEMP
 
 	// Enable the interrupts
 	sei
@@ -313,6 +325,61 @@ COUNTER_CLOCKWISE:
 
 	ret
 
+// The pin change interrupt function (not affiliated with int0 and int1)
+PIN_CHANGE:
+
+	push	PCIcomp
+	push	TEMP	
+
+	// Load up the current port into the PCIcomp
+	in		PCIcomp, PINB
+
+	// copy PCIcomp into temp and 'and' it accordingly
+	mov		TEMP, PCIcomp
+
+	// check to see if PB2 was fired
+	andi	TEMP, (1 << PB2)
+	cpi		TEMP, (1 << PB2)
+	breq	PB2_TRIG
+
+	// check to see if PB7 was fired
+	clr		TEMP
+	mov		TEMP, PCIcomp	
+
+	andi	TEMP, (1 << PB7)
+	cpi		TEMP, (1 << PB7)
+	breq	PB7_TRIG
+
+	// IF the pin didn't equal, jump to finished
+	rjmp	PCI_NOTHING
+
+	PB2_TRIG:
+
+		// If PB2 is triggered, then we know to reset the
+		// PWM to default
+		ldi		TEMP, high(DEFAULT_PW)
+		mov		PWsetH, TEMP
+		out		OCR1AH, TEMP
+	
+		ldi		TEMP, low(DEFAULT_PW)
+		mov		PWsetL, TEMP
+		out		OCR1AL, TEMP
+
+		// Make sure we don't walk into unwanted territory
+		rjmp	PCI_NOTHING
+
+	PB7_TRIG:
+
+		nop
+
+	// The everything is over flag!
+	PCI_NOTHING:
+
+	pop		TEMP
+	pop		PCIcomp
+
+	reti
+
 // The debounce function for both INT0 and INT1
 DEBOUNCE:
 
@@ -347,8 +414,6 @@ DEBOUNCE:
 
 		// If the operation still isn't zero, loop again
 		brne 	DBloop
-
-		
 
 	pop 	TEMP
 	pop 	DBcompare
